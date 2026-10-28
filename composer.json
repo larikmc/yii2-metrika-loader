@@ -1,0 +1,34 @@
+{
+    "name": "larikmc/yii2-metrika-loader",
+    "description": "High-performance Yandex Metrika deferred loader for Yii2 (reduces TBT, PSI impact, retains 100% analytics)",
+    "keywords": [
+        "yii2",
+        "extension",
+        "yandex-metrika",
+        "metrika",
+        "pagespeed",
+        "performance",
+        "deferred-loading",
+        "tbt"
+    ],
+    "type": "yii2-extension",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "LarikMC",
+            "homepage": "https://64web.ru"
+        }
+    ],
+    "require": {
+        "php": ">=7.4.0",
+        "yiisoft/yii2": "~2.0.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0 || ^10.0 || ^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "larikmc\\metrika\\": "src/"
+        }
+    }
+}
