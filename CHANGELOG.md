@@ -2,6 +2,15 @@
 
 All notable changes to `yii2-metrika-loader` will be documented in this file.
 
+## [1.2.0] - 2026-10-28
+
+### Added & Improved
+- **Interactive Settings Form**: administrators can now change the Yandex Metrika counter number (`counterId`), toggle features (`clickmap`, `webvisor`, `trackLinks`, `accurateTrackBounce`, `enabled`), select loader mode (`deferred` vs `immediate`), and configure `ecommerce` / `allowedHosts` directly from the admin panel.
+- **Persistent JSON Storage**: settings are automatically saved to `@common/config/metrika.json` (or `@runtime/metrika.json`) and seamlessly applied to the frontend and backend without touching PHP config files.
+- **Cache Invalidation**: automatically flushes application cache on save for instant reflection.
+- **Removed Outer Layout Padding**: removed `padding: 20px 16px 40px` from `.ym-dashboard` in `metrika-admin.css` to eliminate unwanted top and side gaps inside admin panel layouts.
+- **Graceful Onboarding**: opening the admin dashboard on a fresh install without a configured `counterId` no longer throws a fatal `InvalidConfigException`, allowing immediate configuration via UI.
+
 ## [1.1.1] - 2026-10-28
 
 ### Changed & Improved

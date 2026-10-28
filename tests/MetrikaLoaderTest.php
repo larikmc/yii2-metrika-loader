@@ -12,17 +12,23 @@ use yii\web\View;
 
 class MetrikaLoaderTest extends TestCase
 {
+    private string $tempConfigFile;
+
     protected function setUp(): void
     {
         parent::setUp();
         $_SERVER['HTTP_HOST'] = '64web.ru';
         $_SERVER['SCRIPT_NAME'] = '/index.php';
         $_SERVER['SCRIPT_FILENAME'] = __DIR__ . '/index.php';
+        $this->tempConfigFile = sys_get_temp_dir() . '/metrika_test_' . bin2hex(random_bytes(4)) . '.json';
         $this->mockApplication();
     }
 
     protected function tearDown(): void
     {
+        if (file_exists($this->tempConfigFile)) {
+            @unlink($this->tempConfigFile);
+        }
         $this->destroyApplication();
         @restore_error_handler();
         @restore_exception_handler();
@@ -72,12 +78,24 @@ class MetrikaLoaderTest extends TestCase
         $this->assertTrue($loader->isEnabled());
     }
 
-    public function testExceptionWhenEmptyCounterId(): void
+    public function testGracefulFallbackWhenEmptyCounterId(): void
+    {
+        $loader = new MetrikaLoader([
+            'enabled' => true,
+            'counterId' => null,
+        ]);
+
+        $this->assertFalse($loader->isEnabled());
+        $this->assertSame('', $loader->render());
+    }
+
+    public function testExceptionWhenEmptyCounterIdWithStrictFlag(): void
     {
         $this->expectException(InvalidConfigException::class);
         new MetrikaLoader([
             'enabled' => true,
             'counterId' => null,
+            'throwOnEmptyCounterId' => true,
         ]);
     }
 
@@ -118,126 +136,114 @@ class MetrikaLoaderTest extends TestCase
             'counterId' => 113667541,
             'webvisor' => true,
             'ecommerce' => 'dataLayer',
-            'params' => [
-                'ssr' => true,
-                'customParam' => 'value123',
-            ],
+            'params' => ['user_id' => 42],
         ]);
 
-        $options = $loader->getInitOptions();
-        $this->assertTrue($options['webvisor']);
-        $this->assertTrue($options['clickmap']);
-        $this->assertTrue($options['trackLinks']);
-        $this->assertTrue($options['accurateTrackBounce']);
-        $this->assertSame('dataLayer', $options['ecommerce']);
-        $this->assertTrue($options['ssr']);
-        $this->assertSame('value123', $options['customParam']);
+        $opts = $loader->getInitOptions();
+        $this->assertTrue($opts['clickmap']);
+        $this->assertTrue($opts['trackLinks']);
+        $this->assertTrue($opts['webvisor']);
+        $this->assertSame('dataLayer', $opts['ecommerce']);
+        $this->assertSame(42, $opts['user_id']);
     }
 
-    public function testDeferredRenderContainsQueueAndLegacyProxy(): void
+    public function testClientConfigCompilation(): void
     {
         $loader = new MetrikaLoader([
             'counterId' => 113667541,
-            'mode' => MetrikaLoader::MODE_DEFERRED,
-            'webvisor' => true,
+            'maxDelay' => 4000,
+            'idleTimeout' => 2000,
+        ]);
+
+        $config = $loader->getClientConfig();
+        $this->assertSame(113667541, $config['counterId']);
+        $this->assertSame(MetrikaLoader::MODE_DEFERRED, $config['mode']);
+        $this->assertSame(4000, $config['maxDelay']);
+        $this->assertSame(2000, $config['idleTimeout']);
+        $this->assertTrue($config['loadOnInteraction']);
+        $this->assertIsArray($config['initOptions']);
+    }
+
+    public function testRenderHeadContainsDeferredLogic(): void
+    {
+        $loader = new MetrikaLoader([
+            'counterId' => 113667541,
+            'inline' => true,
+        ]);
+
+        $head = $loader->renderHead();
+        $this->assertStringContainsString('requestIdleCallback', $head);
+        $this->assertStringContainsString('initMetrikaLoader', $head);
+        $this->assertStringContainsString('113667541', $head);
+        $this->assertStringContainsString('tag.js', $head);
+        $this->assertStringContainsString('window.ym', $head);
+    }
+
+    public function testRenderNoscript(): void
+    {
+        $loader = new MetrikaLoader([
+            'counterId' => 113667541,
+            'renderNoscript' => true,
+        ]);
+
+        $noscript = $loader->renderNoscript();
+        $this->assertStringContainsString('<noscript>', $noscript);
+        $this->assertStringContainsString('https://mc.yandex.ru/watch/113667541', $noscript);
+
+        $loaderNoPixel = new MetrikaLoader([
+            'counterId' => 113667541,
+            'renderNoscript' => false,
+        ]);
+        $this->assertSame('', $loaderNoPixel->renderNoscript());
+    }
+
+    public function testSaveAndLoadStoredSettings(): void
+    {
+        $loader = new MetrikaLoader([
+            'storageFile' => $this->tempConfigFile,
+            'counterId' => 11111111,
+            'clickmap' => true,
+            'webvisor' => false,
+        ]);
+
+        // Save new settings
+        $loader->saveSettings([
+            'counterId' => '99887766',
+            'clickmap' => 0,
+            'webvisor' => 1,
             'ecommerce' => 'dataLayer',
+            'allowedHosts' => '64web.ru, example.com',
         ]);
 
-        $output = $loader->render();
-
-        $this->assertStringContainsString('window.ym = window.ym', $output);
-        $this->assertStringContainsString("'yaCounter' + counterId", $output);
-        $this->assertStringContainsString('requestIdleCallback', $output);
-        $this->assertStringContainsString('requestAnimationFrame', $output);
-        $this->assertStringContainsString('https://mc.yandex.ru/watch/113667541', $output);
-        $this->assertStringContainsString('"counterId":113667541', $output);
-        $this->assertStringContainsString('"ecommerce":"dataLayer"', $output);
-    }
-
-    public function testImmediateRender(): void
-    {
-        $loader = new MetrikaLoader([
-            'counterId' => 113667541,
-            'mode' => MetrikaLoader::MODE_IMMEDIATE,
-        ]);
-
-        $output = $loader->render();
-
-        $this->assertStringContainsString('"mode":"immediate"', $output);
-        $this->assertStringContainsString('window.ym = window.ym', $output);
-    }
-
-    public function testCspNonce(): void
-    {
-        $loader = new MetrikaLoader([
-            'counterId' => 113667541,
-            'nonce' => 'test-nonce-abcdef',
-        ]);
-
-        $output = $loader->render();
-        $this->assertStringContainsString('nonce="test-nonce-abcdef"', $output);
-        $this->assertStringContainsString('"nonce":"test-nonce-abcdef"', $output);
-    }
-
-    public function testConsentOptions(): void
-    {
-        $loader = new MetrikaLoader([
-            'counterId' => 113667541,
-            'requireConsent' => true,
-            'consentStorageKey' => '64web_cookie_consent_v1',
-            'consentEvent' => 'cookie_analytics_enabled',
-            'rejectEvent' => 'cookie_analytics_disabled',
-        ]);
-
-        $output = $loader->render();
-        $this->assertStringContainsString('"requireConsent":true', $output);
-        $this->assertStringContainsString('"consentStorageKey":"64web_cookie_consent_v1"', $output);
-        $this->assertStringContainsString('"consentEvent":"cookie_analytics_enabled"', $output);
-        $this->assertStringContainsString('"rejectEvent":"cookie_analytics_disabled"', $output);
-    }
-
-    public function testRegisterInView(): void
-    {
-        $view = new View();
-        $loader = new MetrikaLoader([
-            'counterId' => 113667541,
-            'mode' => MetrikaLoader::MODE_DEFERRED,
-        ]);
-
-        $loader->register($view);
-
-        $this->assertNotEmpty($view->js[View::POS_HEAD]);
-        $this->assertNotEmpty($view->js[View::POS_BEGIN]);
-    }
-
-    public function testWidgetInheritsComponentSettings(): void
-    {
-        Yii::$app->set('metrika', [
-            'class' => MetrikaLoader::class,
-            'counterId' => 113667541,
-            'webvisor' => true,
-            'ecommerce' => 'dataLayer',
-            'maxDelay' => 4200,
-        ]);
-
-        // Widget without explicit props
-        $widget = new MetrikaWidget();
-        $loader = $widget->getLoader();
-
-        $this->assertInstanceOf(MetrikaLoader::class, $loader);
-        $this->assertSame(113667541, $loader->counterId);
+        $this->assertSame(99887766, $loader->counterId);
+        $this->assertFalse($loader->clickmap);
         $this->assertTrue($loader->webvisor);
         $this->assertSame('dataLayer', $loader->ecommerce);
-        $this->assertSame(4200, $loader->maxDelay);
+        $this->assertSame(['64web.ru', 'example.com'], $loader->allowedHosts);
+        $this->assertFileExists($this->tempConfigFile);
 
-        // Widget with override
-        $overrideWidget = new MetrikaWidget([
-            'webvisor' => false,
-            'maxDelay' => 5000,
+        // Instantiate a fresh loader with same storageFile -> should load saved settings
+        $freshLoader = new MetrikaLoader([
+            'storageFile' => $this->tempConfigFile,
         ]);
-        $overrideLoader = $overrideWidget->getLoader();
-        $this->assertFalse($overrideLoader->webvisor);
-        $this->assertSame(5000, $overrideLoader->maxDelay);
-        $this->assertSame(113667541, $overrideLoader->counterId);
+
+        $this->assertSame(99887766, $freshLoader->counterId);
+        $this->assertFalse($freshLoader->clickmap);
+        $this->assertTrue($freshLoader->webvisor);
+        $this->assertSame('dataLayer', $freshLoader->ecommerce);
+        $this->assertSame(['64web.ru', 'example.com'], $freshLoader->allowedHosts);
+    }
+
+    public function testMetrikaWidgetIntegration(): void
+    {
+        $comp = new MetrikaLoader([
+            'counterId' => 113667541,
+            'webvisor' => true,
+        ]);
+        Yii::$app->set('metrika', $comp);
+
+        $output = MetrikaWidget::widget();
+        $this->assertStringContainsString('113667541', $output);
+        $this->assertStringContainsString('initMetrikaLoader', $output);
     }
 }

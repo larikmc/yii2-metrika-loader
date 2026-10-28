@@ -17,7 +17,6 @@
                 navigator.clipboard.writeText(text).then(function() {
                     showToast('Код скопирован в буфер обмена!');
                 }).catch(function() {
-                    // Fallback
                     var ta = document.createElement('textarea');
                     ta.value = text;
                     document.body.appendChild(ta);
@@ -29,27 +28,30 @@
             });
         });
 
-        // 2. Category Filter Tabs
-        var filterBtns = document.querySelectorAll('.ym-nav__btn[data-category]');
-        var cards = document.querySelectorAll('.ym-setting-card');
-
-        filterBtns.forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                filterBtns.forEach(function(b) { b.classList.remove('active'); });
-                btn.classList.add('active');
-
-                var cat = btn.getAttribute('data-category');
-                cards.forEach(function(card) {
-                    if (cat === 'all' || card.getAttribute('data-category') === cat) {
-                        card.style.display = '';
-                    } else {
-                        card.style.display = 'none';
-                    }
+        // 2. Mode Radio Card selection sync
+        var modeRadios = document.querySelectorAll('input[type="radio"][name="MetrikaSetting[mode]"]');
+        modeRadios.forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                document.querySelectorAll('.ym-mode-card').forEach(function(card) {
+                    card.classList.remove('is-active');
                 });
+                var parentCard = radio.closest('.ym-mode-card');
+                if (parentCard) {
+                    parentCard.classList.add('is-active');
+                }
             });
         });
 
-        // 3. Toast Helper
+        // 3. Enabled Switch label sync
+        var enabledCheckbox = document.getElementById('ymEnabled');
+        var enabledLabel = document.getElementById('ymEnabledLabel');
+        if (enabledCheckbox && enabledLabel) {
+            enabledCheckbox.addEventListener('change', function() {
+                enabledLabel.textContent = enabledCheckbox.checked ? 'Включен на сайте' : 'Отключен';
+            });
+        }
+
+        // 4. Toast Helper
         function showToast(msg) {
             var toast = document.getElementById('ymToast');
             if (!toast) {

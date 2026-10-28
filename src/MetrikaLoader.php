@@ -17,6 +17,9 @@ use yii\web\View;
  * Google PageSpeed Insights (PSI) and Total Blocking Time (TBT) scores
  * while guaranteeing 100% data and goal tracking fidelity.
  *
+ * Supports persistent JSON storage so settings can be changed
+ * directly via the admin panel without modifying PHP configs.
+ *
  * @author LarikMC <https://64web.ru>
  * @license MIT
  */
@@ -26,7 +29,7 @@ class MetrikaLoader extends Component
     public const MODE_IMMEDIATE = 'immediate';
 
     /**
-     * @var int|string Yandex Metrika Counter ID (e.g. 113667541).
+     * @var int|string|null Yandex Metrika Counter ID (e.g. 113667541).
      */
     public $counterId;
 
@@ -36,7 +39,7 @@ class MetrikaLoader extends Component
     public string $mode = self::MODE_DEFERRED;
 
     /**
-     * @var bool Whether Metrika is enabled. Can be tied to YII_ENV_PROD or config.
+     * @var bool Whether Metrika is enabled.
      */
     public bool $enabled = true;
 
@@ -142,23 +145,276 @@ class MetrikaLoader extends Component
     public bool $inline = true;
 
     /**
+     * @var string|null Path or alias to persistent settings file (e.g. '@common/config/metrika.json' or '@runtime/metrika.json').
+     * If null, automatically resolves to '@common/config/metrika.json' if '@common/config' alias exists,
+     * otherwise '@runtime/metrika.json'.
+     */
+    public ?string $storageFile = null;
+
+    /**
+     * @var bool Whether to throw InvalidConfigException if counterId is empty when enabled is true.
+     * Defaults to false to allow opening the admin panel to configure the counter ID.
+     */
+    public bool $throwOnEmptyCounterId = false;
+
+    /**
      * {@inheritdoc}
      */
     public function init(): void
     {
         parent::init();
 
-        if ($this->enabled && empty($this->counterId)) {
+        $this->loadStoredSettings();
+
+        if ($this->throwOnEmptyCounterId && $this->enabled && empty($this->counterId)) {
             throw new InvalidConfigException('The "counterId" property must be set for MetrikaLoader.');
         }
 
-        if ($this->counterId !== null) {
+        if ($this->counterId !== null && is_numeric($this->counterId)) {
             $this->counterId = (int) $this->counterId;
         }
 
         if (!in_array($this->mode, [self::MODE_DEFERRED, self::MODE_IMMEDIATE], true)) {
             $this->mode = self::MODE_DEFERRED;
         }
+    }
+
+    /**
+     * Resolves absolute file path to the storage file.
+     *
+     * @return string|null
+     */
+    public function resolveStorageFile(): ?string
+    {
+        if ($this->storageFile !== null) {
+            return Yii::getAlias($this->storageFile);
+        }
+
+        if (Yii::$app !== null) {
+            if (Yii::getAlias('@common/config', false) !== false) {
+                return Yii::getAlias('@common/config/metrika.json');
+            }
+            if (Yii::getAlias('@runtime', false) !== false) {
+                return Yii::getAlias('@runtime/metrika.json');
+            }
+            if (Yii::getAlias('@app/config', false) !== false) {
+                return Yii::getAlias('@app/config/metrika.json');
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the relative or friendly path to the storage file for UI display.
+     *
+     * @return string|null
+     */
+    public function getStorageFilePath(): ?string
+    {
+        $file = $this->resolveStorageFile();
+        if ($file === null) {
+            return null;
+        }
+
+        if (Yii::$app !== null && Yii::getAlias('@app', false) !== false) {
+            $appPath = Yii::getAlias('@app');
+            $rootPath = dirname($appPath);
+            if (str_starts_with($file, $rootPath)) {
+                return ltrim(substr($file, strlen($rootPath)), '/\\');
+            }
+        }
+
+        return $file;
+    }
+
+    /**
+     * Checks if the storage directory/file is writable.
+     *
+     * @return bool
+     */
+    public function isStorageWritable(): bool
+    {
+        $file = $this->resolveStorageFile();
+        if ($file === null) {
+            return false;
+        }
+
+        if (file_exists($file)) {
+            return is_writable($file);
+        }
+
+        $dir = dirname($file);
+        return is_dir($dir) ? is_writable($dir) : (is_dir(dirname($dir)) && is_writable(dirname($dir)));
+    }
+
+    /**
+     * Loads stored settings from the JSON storage file into this instance.
+     *
+     * @return bool
+     */
+    public function loadStoredSettings(): bool
+    {
+        $file = $this->resolveStorageFile();
+        if ($file === null || !is_file($file) || !is_readable($file)) {
+            return false;
+        }
+
+        try {
+            $content = file_get_contents($file);
+            if ($content === false || trim($content) === '') {
+                return false;
+            }
+            $data = Json::decode($content);
+            if (is_array($data)) {
+                $this->applySettingsArray($data);
+                return true;
+            }
+        } catch (\Throwable $e) {
+            Yii::warning('Failed to load Metrika settings from storage: ' . $e->getMessage(), __METHOD__);
+        }
+
+        return false;
+    }
+
+    /**
+     * Applies an associative array of settings to the loader properties.
+     *
+     * @param array $data
+     */
+    public function applySettingsArray(array $data): void
+    {
+        if (array_key_exists('counterId', $data)) {
+            $cid = trim((string)$data['counterId']);
+            $this->counterId = $cid !== '' ? (is_numeric($cid) ? (int)$cid : $cid) : null;
+        }
+
+        if (array_key_exists('enabled', $data)) {
+            $this->enabled = (bool)$data['enabled'];
+        }
+
+        if (array_key_exists('mode', $data) && in_array($data['mode'], [self::MODE_DEFERRED, self::MODE_IMMEDIATE], true)) {
+            $this->mode = $data['mode'];
+        }
+
+        if (array_key_exists('webvisor', $data)) {
+            $this->webvisor = (bool)$data['webvisor'];
+        }
+
+        if (array_key_exists('clickmap', $data)) {
+            $this->clickmap = (bool)$data['clickmap'];
+        }
+
+        if (array_key_exists('trackLinks', $data)) {
+            $this->trackLinks = (bool)$data['trackLinks'];
+        }
+
+        if (array_key_exists('accurateTrackBounce', $data)) {
+            $this->accurateTrackBounce = is_numeric($data['accurateTrackBounce']) ? (int)$data['accurateTrackBounce'] : (bool)$data['accurateTrackBounce'];
+        }
+
+        if (array_key_exists('ecommerce', $data)) {
+            $ec = is_string($data['ecommerce']) ? trim($data['ecommerce']) : $data['ecommerce'];
+            $this->ecommerce = ($ec === '' || $ec === null) ? null : $ec;
+        }
+
+        if (array_key_exists('allowedHosts', $data)) {
+            if (is_string($data['allowedHosts'])) {
+                $hosts = array_filter(array_map('trim', explode(',', $data['allowedHosts'])));
+                $this->allowedHosts = array_values($hosts);
+            } elseif (is_array($data['allowedHosts'])) {
+                $this->allowedHosts = array_values(array_filter(array_map('trim', $data['allowedHosts'])));
+            }
+        }
+
+        if (array_key_exists('maxDelay', $data) && is_numeric($data['maxDelay'])) {
+            $this->maxDelay = max(500, min(30000, (int)$data['maxDelay']));
+        }
+
+        if (array_key_exists('idleTimeout', $data) && is_numeric($data['idleTimeout'])) {
+            $this->idleTimeout = max(200, min(10000, (int)$data['idleTimeout']));
+        }
+
+        if (array_key_exists('loadOnInteraction', $data)) {
+            $this->loadOnInteraction = (bool)$data['loadOnInteraction'];
+        }
+
+        if (array_key_exists('requireConsent', $data)) {
+            $this->requireConsent = (bool)$data['requireConsent'];
+        }
+
+        if (array_key_exists('renderNoscript', $data)) {
+            $this->renderNoscript = (bool)$data['renderNoscript'];
+        }
+
+        if (array_key_exists('inline', $data)) {
+            $this->inline = (bool)$data['inline'];
+        }
+    }
+
+    /**
+     * Persists settings to storage file and flushes cache if available.
+     *
+     * @param array $data
+     * @return bool
+     * @throws \RuntimeException
+     */
+    public function saveSettings(array $data): bool
+    {
+        $this->applySettingsArray($data);
+
+        $file = $this->resolveStorageFile();
+        if ($file === null) {
+            throw new \RuntimeException('Cannot resolve storage file for Metrika settings. Set "storageFile" in component config.');
+        }
+
+        $dir = dirname($file);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException(sprintf('Directory "%s" could not be created.', $dir));
+        }
+
+        $payload = [
+            'counterId' => $this->counterId,
+            'enabled' => $this->enabled,
+            'mode' => $this->mode,
+            'webvisor' => $this->webvisor,
+            'clickmap' => $this->clickmap,
+            'trackLinks' => $this->trackLinks,
+            'accurateTrackBounce' => $this->accurateTrackBounce,
+            'ecommerce' => $this->ecommerce,
+            'allowedHosts' => $this->allowedHosts,
+            'maxDelay' => $this->maxDelay,
+            'idleTimeout' => $this->idleTimeout,
+            'loadOnInteraction' => $this->loadOnInteraction,
+            'requireConsent' => $this->requireConsent,
+            'renderNoscript' => $this->renderNoscript,
+            'inline' => $this->inline,
+            'updatedAt' => date('c'),
+        ];
+
+        $json = Json::encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        $tmpFile = $file . '.tmp.' . bin2hex(random_bytes(4));
+        if (file_put_contents($tmpFile, $json . PHP_EOL, LOCK_EX) === false) {
+            throw new \RuntimeException("Failed to write temporary settings file: {$tmpFile}");
+        }
+
+        if (!@rename($tmpFile, $file)) {
+            @unlink($tmpFile);
+            if (file_put_contents($file, $json . PHP_EOL, LOCK_EX) === false) {
+                throw new \RuntimeException("Failed to write settings file: {$file}");
+            }
+        }
+
+        if (Yii::$app !== null && Yii::$app->has('cache') && Yii::$app->cache !== null) {
+            try {
+                Yii::$app->cache->flush();
+            } catch (\Throwable $e) {
+                // Non-blocking
+            }
+        }
+
+        return true;
     }
 
     /**
