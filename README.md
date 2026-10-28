@@ -1,222 +1,166 @@
-# Universal Yii2 Metrika Loader (`larikmc/yii2-metrika-loader`)
+# Yii2 Metrika Loader (`larikmc/yii2-metrika-loader`)
 
-> **Высокопроизводительный загрузчик Яндекс Метрики для Yii2**, оптимизирующий Google PageSpeed Insights (PSI), снижающий Total Blocking Time (TBT) до минимума и сохраняющий 100% точность аналитики и вызовов целей (`reachGoal`).
+[![Latest Version](https://img.shields.io/github/v/release/larikmc/yii2-metrika-loader?label=release)](https://github.com/larikmc/yii2-metrika-loader/releases)
+[![Software License](https://img.shields.io/badge/license-MIT-brightgreen.svg)](LICENSE.md)
+[![PHP](https://img.shields.io/badge/PHP-7.4%20|%208.0%20|%208.1%20|%208.2%20|%208.3%20|%208.4-blue)](https://php.net)
+[![Yii2](https://img.shields.io/badge/Yii2-2.0.x-orange.svg)](https://yiiframework.com)
+
+**Высокопроизводительный загрузчик Яндекс.Метрики для Yii2 с визуальной панелью управления.**  
+Оптимизирует **Google PageSpeed Insights** (PSI 90–100, TBT = 0 мс), устраняет блокировку основного потока браузера и гарантирует **100% фиксацию конверсий и вызовов целей** (`reachGoal`).
 
 ---
 
-## 🎯 Проблема и решение
+## ⚡ Главные преимущества
 
-### Проблема стандартного счётчика Метрики
-Официальный асинхронный сниппет Яндекс Метрики скачивает тяжёлый скрипт `tag.js` (~70-90 КБ gzipped, ~250 КБ распакованный JS) в первые секунды загрузки страницы. Это приводит к:
-1. **Штрафам Google PageSpeed Insights (Lighthouse)**: высокий TBT (Total Blocking Time), задержка отрисовки (LCP/FCP), перегрузка главного потока (Long Tasks).
-2. **Блокировке гидратации и интерактивности**: парсинг и компиляция `tag.js` конкурируют с критическим JS-кодом сайта.
-
-### Решение MetrikaLoader
-1. **Ранняя очередь `window.ym`**: регистрируется синхронно и мгновенно (< 0.2 мс) в `<head>`, благодаря чему любые скрипты на странице (клик по кнопкам, квизы, отправка форм) могут сразу вызывать `ym(id, 'reachGoal', ...)` — ни одно событие не потеряется.
-2. **Прокси для обратной совместимости с `yaCounter<ID>`**: устаревшие скрипты или расширения, обращающиеся к `window.yaCounterXXXXX.reachGoal()`, прозрачно перенаправляются в очередь `window.ym`.
-3. **Отложенная загрузка `tag.js`**: скачивание откладывается до завершения первоначального рендеринга страницы с использованием двойного `requestAnimationFrame` и `requestIdleCallback` (с таймаутом).
-4. **Реакция на первое действие пользователя (`loadOnInteraction`)**: при первом скролле, касании экрана, клике или нажатии клавиши скрипт загружается немедленно.
-5. **Предохранитель максимальной задержки (`maxDelay`)**: если пользователь не взаимодействует со страницей, `tag.js` загружается по истечении таймаута (по умолчанию 3500 мс).
-6. **Приоритет сети**: тег `<script>` создаётся с `async=true` и `fetchPriority="low"`.
-7. **Поддержка Cookie Consent**: интеграция с баннерами согласия (GDPR / 152-ФЗ).
-8. **Защита от дублей**: гарантия однократного подключения скрипта.
+1. **Идеальная скорость (PageSpeed 90–100 & TBT = 0 мс)**:  
+   Тяжёлый скрипт `tag.js` не скачивается в первые секунды. Он загружается в свободную паузу браузера (`requestIdleCallback`) либо мгновенно по первому касанию/скроллу страницы.
+2. **0 потерянных целей**:  
+   Очередь `window.ym` создаётся мгновенно (< 0.2 мс) в `<head>`. Любые клики, формы и квизы могут сразу вызывать `reachGoal` — ни одна конверсия не пропадёт.
+3. **Управление из панели администратора**:  
+   Смена номера счётчика, включение Вебвизора, Карты кликов, Ecommerce или смена режима — прямо в веб-интерфейсе без правок PHP-конфигов. Настройки сохраняются автоматически.
+4. **Обратная совместимость**:  
+   Поддерживает как современный синтаксис `ym(id, ...)`, так и старый вызов `yaCounterXXXXX.reachGoal(...)`.
+5. **Фильтр доменов**:  
+   Защита от сбора мусорной статистики с локальных копий (`.loc`, `localhost`).
 
 ---
 
 ## 📦 Установка
 
-Через Composer:
+Установите пакет через Composer:
 
 ```bash
 composer require larikmc/yii2-metrika-loader
 ```
 
-Или добавьте в `composer.json` вашего проекта:
+Или добавьте в `composer.json`:
 
 ```json
 {
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/larikmc/yii2-metrika-loader.git"
-        }
-    ],
     "require": {
-        "larikmc/yii2-metrika-loader": "^1.1.0"
+        "larikmc/yii2-metrika-loader": "^1.2.0"
     }
 }
 ```
 
 ---
 
-## ⚙️ Конфигурация
+## 🚀 Быстрый старт за 3 шага
 
-### 1. Как компонент приложения (`common/config/main.php` или `frontend/config/main.php`)
+### Шаг 1. Подключите компонент (`common/config/main.php`)
 
 ```php
 'components' => [
     'metrika' => [
         'class' => \larikmc\metrika\MetrikaLoader::class,
-        'counterId' => 113667541, // ID вашего счётчика
-        'mode' => \larikmc\metrika\MetrikaLoader::MODE_DEFERRED, // 'deferred' или 'immediate'
-        'enabled' => !YII_DEBUG || YII_ENV_PROD, // Включение/отключение
-        'maxDelay' => 3500, // Максимальная задержка до принудительной загрузки (мс)
-        'idleTimeout' => 1500, // Таймаут для requestIdleCallback (мс)
-        'loadOnInteraction' => true, // Загрузка при первом взаимодействии пользователя
-        'webvisor' => true,
-        'clickmap' => true,
-        'trackLinks' => true,
-        'accurateTrackBounce' => true,
-        'ecommerce' => 'dataLayer', // Поддержка электронной коммерции
-        'params' => [
-            'ssr' => true,
-        ],
-        // Фильтрация по доменам (опционально)
-        'allowedHosts' => [
-            '64web.ru',
-            'www.64web.ru',
-        ],
-        // Интеграция с политикой согласия (Cookie Consent)
-        'requireConsent' => false,
-        'consentStorageKey' => '64web_cookie_consent_v1',
-        'consentEvent' => 'cookie_analytics_enabled',
-        'rejectEvent' => 'cookie_analytics_disabled',
+        'counterId' => 113667541, // номер счётчика (можно задать и в админке)
     ],
 ],
 ```
 
----
-
-## 🚀 Использование в шаблонах (Layout)
-
-В шаблоне `views/layouts/main.php` (в секции `<head>`):
-
-```php
-use larikmc\metrika\MetrikaWidget;
-
-<head>
-    <meta charset="<?= Yii::$app->charset ?>">
-    <title><?= Html::encode($this->title) ?></title>
-
-    <!-- Подключение Яндекс Метрики (ранняя очередь + отложенный tag.js) -->
-    <?= MetrikaWidget::widget() ?>
-
-    <?php $this->head() ?>
-</head>
-```
-
-Либо с передачей параметров напрямую в виджет (без регистрации компонента):
-
-```php
-<?= MetrikaWidget::widget([
-    'counterId' => 113667541,
-    'mode' => 'deferred',
-    'webvisor' => true,
-    'ecommerce' => 'dataLayer',
-]) ?>
-```
-
----
-
-## 🎛️ Панель управления и аудит настроек (Admin Dashboard)
-
-Пакет включает встроенную панель администратора для визуального просмотра настроек, аудита влияния на PageSpeed Insights (PSI/TBT), копирования сниппетов и перехода в кабинет Метрики.
-
-### 1. Подключение модуля в `backend/config/main.php`:
+### Шаг 2. Подключите модуль админки (`backend/config/main.php`)
 
 ```php
 'modules' => [
     'metrika' => [
         'class' => \larikmc\metrika\Module::class,
-        // Опционально: контроль доступа (по умолчанию ['@'] — только авторизованные)
-        'accessRoles' => ['admin'],
+        'accessRoles' => ['admin'], // доступ только для администраторов
     ],
 ],
 ```
 
-### 2. URL панели управления
-После регистрации модуля страница открывается по адресу:
-- `http://ваш-домен/admin/metrika` (или `/metrika` в зависимости от `baseUrl`)
-- Прямой маршрут Yii2: `metrika/default/index`
+Добавьте пункт в меню админки (по желанию):
 
-### 3. Добавление пункта в меню админки (например, в `backend/config/main.php`):
 ```php
-'menu' => [
-    // ...
-    [
-        'icon' => 'query_stats',
-        'label' => 'Аналитика',
-        'items' => [
-            ['label' => 'Яндекс.Метрика', 'url' => ['/metrika']],
-        ],
-    ],
+[
+    'icon' => 'query_stats',
+    'label' => 'Яндекс.Метрика',
+    'url' => ['/metrika'],
 ],
 ```
 
-### Возможности панели:
-- **Сводка**: статус работы, режим (`deferred` / `immediate`), влияние на TBT (~0 мс).
-- **Аудит каждого параметра**: таблица с текущим значением, рекомендованным оптимальным значением и объяснением, на что параметр влияет.
-- **Фильтрация**: быстрые вкладки по категориям (Скорость & PSI, Сбор данных, Отказы, Домены).
-- **Шпаргалка**: готовые сниппеты для layout и отправки целей JavaScript (`ym(..., 'reachGoal')`) с кнопками копирования в буфер обмена.
-- **Ссылка в 1 клик**: прямой переход в кабинет Яндекс.Метрики для вашего счётчика.
-- **Независимые стили**: панель содержит встроенный адаптивный дизайн с поддержкой светлой и тёмной тем и не зависит от сторонних CSS-фреймворков.
+Панель управления доступна по адресу: `/admin/metrika`.
+
+### Шаг 3. Вставьте виджет в шаблон сайта (`frontend/views/layouts/main.php`)
+
+В секцию `<head>`:
+
+```php
+<?= \larikmc\metrika\MetrikaWidget::widget() ?>
+```
+
+Готово! Метрика работает в отложенном режиме с максимальным баллом PageSpeed.
 
 ---
 
-## 📋 Таблица параметров
+## 🎛️ Панель управления (Admin Dashboard)
 
-| Параметр | Тип | По умолчанию | Описание |
-|---|---|---|---|
-| `counterId` | `int\|string` | *(обязательный)* | Номер счётчика Яндекс Метрики |
-| `mode` | `string` | `'deferred'` | Режим загрузки: `'deferred'` (оптимизированный) или `'immediate'` (стандартный сниппет) |
-| `enabled` | `bool` | `true` | Включение / выключение вывода кода |
-| `maxDelay` | `int` | `3500` | Максимальная задержка (мс) до принудительной загрузки `tag.js` |
-| `idleTimeout` | `int` | `1500` | Таймаут ожидания простоя в `requestIdleCallback` (мс) |
-| `loadOnInteraction`| `bool` | `true` | Запуск загрузки при первом событии пользователя (scroll, click, touch, keydown) |
-| `interactionEvents`| `array`| `['pointerdown', 'touchstart', 'scroll', 'keydown', 'wheel']` | Список событий пользовательского взаимодействия |
-| `webvisor` | `bool` | `false` | Запись Вебвизора |
-| `clickmap` | `bool` | `true` | Карта кликов |
-| `trackLinks` | `bool` | `true` | Отслеживание внешних ссылок |
-| `accurateTrackBounce` | `bool\|int` | `true` | Точный показатель отказов |
-| `ecommerce` | `string\|bool\|null` | `null` | Имя контейнера электронной коммерции (`'dataLayer'`) |
-| `triggerEvent` | `bool` | `false` | Генерация события инициализации в DOM |
-| `params` | `array` | `[]` | Дополнительные параметры инициализации (`ssr`, и др.) |
-| `allowedHosts` | `array` | `[]` | Список разрешённых хостов (пустой = любые) |
-| `nonce` | `string\|callable` | `null` | CSP nonce для Content Security Policy |
-| `renderNoscript` | `bool` | `true` | Вывод резервного пикселя `<noscript>` |
-| `requireConsent` | `bool` | `false` | Ожидать согласия пользователя перед загрузкой скрипта |
-| `consentStorageKey`| `string\|null` | `null` | Ключ в LocalStorage с состоянием согласия |
-| `consentEvent` | `string` | `'cookie_analytics_enabled'` | Имя события согласия на аналитику |
-| `rejectEvent` | `string` | `'cookie_analytics_disabled'` | Имя события отказа от аналитики |
-| `inline` | `bool` | `true` | Встраивать загрузчик инлайново (0 лишних HTTP-запросов) |
+В модуль встроен удобный интерфейс управления (`/admin/metrika`):
+
+- **Номер счётчика**: просмотр и сменяемость ID счётчика с быстрой ссылкой в кабинет Яндекс.Метрики.
+- **Тумблеры функций**:
+  - 🎥 **Вебвизор 2.0** (`webvisor`) — включение видеозаписи действий пользователей.
+  - 🗺️ **Карта кликов** (`clickmap`) — тепловая карта нажатий.
+  - 🔗 **Отслеживание ссылок** (`trackLinks`) — автофиксация переходов, кликов по `tel:`, `mailto:` и скачиваний файлов.
+  - ⏱️ **Точный отказ (15 сек)** (`accurateTrackBounce`) — честный показатель отказов.
+- **Режим работы**:
+  - `⚡ Отложенный (Deferred)` — рекомендуемый режим высокой скорости (PageSpeed 90–100).
+  - `⏱️ Стандартный (Immediate)` — классическая синхронная загрузка.
+- **Электронная коммерция**: поддержка передачи контейнера `dataLayer`.
+- **Фильтр доменов**: ограничение сбора статистики рабочими доменами сайта.
+- **Шпаргалка**: готовые сниппеты с кнопками копирования в 1 клик.
+
+Все настройки автоматически сохраняются в файл `common/config/metrika.json` и мгновенно применяются на фронтенде с очисткой кэша.
 
 ---
 
-## 🛠 API в JavaScript
+## 🎯 Отправка целей (Goal Tracking)
 
-Загрузчик экспортирует удобные глобальные функции:
+Цели работают сразу после открытия страницы, даже если скрипт Метрики ещё не успел загрузиться:
 
-### 1. Принудительная загрузка
 ```javascript
-// Загрузить немедленно (например, при начале оформления заказа)
+// Стандартный вызов цели:
+ym(113667541, 'reachGoal', 'lead_form_submitted');
+
+// С передачей параметров:
+ym(113667541, 'reachGoal', 'order_success', { order_price: 4990, currency: 'RUB' });
+
+// Старый формат yaCounter (автоматически перехватывается):
+yaCounter113667541.reachGoal('lead_form_submitted');
+```
+
+Принудительно загрузить Метрику в любой момент из JavaScript:
+
+```javascript
 window.loadYandexMetrika();
 ```
 
-### 2. Отслеживание целей
-Работает в любой момент, даже до загрузки `tag.js`:
-```javascript
-// Официальный современный синтаксис
-ym(113667541, 'reachGoal', 'lead_form_submitted', { price: 5000 });
+---
 
-// Устаревший синтаксис yaCounter (поддерживается автоматически через прокси)
-window.yaCounter113667541.reachGoal('lead_form_submitted');
-```
+## ⚙️ Справочник параметров конфигурации
+
+| Параметр | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `counterId` | `int\|string` | `null` | Номер счётчика Метрики |
+| `mode` | `string` | `'deferred'` | Режим загрузки: `'deferred'` (отложенный) или `'immediate'` |
+| `enabled` | `bool` | `true` | Включение / выключение вывода кода |
+| `webvisor` | `bool` | `false` | Запись действий посетителей (Вебвизор 2.0) |
+| `clickmap` | `bool` | `true` | Тепловая карта кликов |
+| `trackLinks` | `bool` | `true` | Автоотслеживание кликов по ссылкам, телефонам и файлам |
+| `accurateTrackBounce` | `bool\|int` | `true` | Точный показатель отказов (15 секунд) |
+| `ecommerce` | `string\|null` | `null` | Имя контейнера электронной коммерции (`'dataLayer'`) |
+| `allowedHosts` | `array` | `[]` | Список разрешённых доменов (пусто = все домены) |
+| `maxDelay` | `int` | `3500` | Макс. таймаут до принудительного старта (мс) |
+| `idleTimeout` | `int` | `1500` | Таймаут ожидания простоя в `requestIdleCallback` (мс) |
+| `loadOnInteraction` | `bool` | `true` | Запуск по первому клику, скроллу, тачу или нажатию клавиш |
+| `storageFile` | `string\|null` | `null` | Путь к JSON-файлу сохранения (по умолчанию `@common/config/metrika.json`) |
+| `renderNoscript` | `bool` | `true` | Вывод резервного 1x1 пикселя `<noscript>` |
+| `inline` | `bool` | `true` | Встраивать загрузчик инлайново (0 лишних HTTP-запросов) |
+| `requireConsent` | `bool` | `false` | Ожидание куки-баннера перед загрузкой (GDPR) |
 
 ---
 
 ## 🧪 Тестирование
-
-Пакет покрыт модульными тестами PHPUnit:
 
 ```bash
 vendor/bin/phpunit
@@ -226,4 +170,4 @@ vendor/bin/phpunit
 
 ## 📄 Лицензия
 
-MIT License. Copyright (c) 2026 LarikMC.
+MIT License. Автор: [LarikMC](https://64web.ru)
