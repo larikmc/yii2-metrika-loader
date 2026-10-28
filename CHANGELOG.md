@@ -2,6 +2,13 @@
 
 All notable changes to `yii2-metrika-loader` will be documented in this file.
 
+## [1.1.1] - 2026-10-28
+
+### Changed & Improved
+- Simplified and decluttered admin dashboard UI: clear cards for core features with human explanations in 1 sentence.
+- Moved fine-tuning speed parameters (timeouts, interaction triggers) into a clean collapsible accordion block.
+- Streamlined cheat sheet with 1-click copy buttons for layout widget and JavaScript goal tracking.
+
 ## [1.1.0] - 2026-10-28
 
 ### Added
