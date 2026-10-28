@@ -2,6 +2,15 @@
 
 All notable changes to `yii2-metrika-loader` will be documented in this file.
 
+## [1.1.0] - 2026-10-28
+
+### Added
+- Standalone Yii2 admin module (`larikmc\metrika\Module`) and dashboard controller (`DefaultController`).
+- Responsive, zero-dependency admin UI with dark/light theme support (`MetrikaAdminAsset`, `metrika-admin.css`, `metrika-admin.js`).
+- Complete settings inspection and audit table with explanations of each parameter, PSI/TBT performance impact, and optimal recommendations.
+- Quick copy developer cheatsheet for layout integration and conversion goal tracking (`ym(id, 'reachGoal')`).
+- Direct link to Yandex Metrika dashboard for the active counter ID.
+
 ## [1.0.0] - 2026-10-27
 
 ### Added
